@@ -2,24 +2,22 @@
 Stock Simulator - Paper Trading with Alpaca API
 """
 import os
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, OrderSide, TimeInForce
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
-from datetime import datetime, timedelta
+from alpaca_trade_api.rest import REST
 from config import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL
 
 
 class StockSimulator:
     def __init__(self):
-        """Initialize Alpaca trading client (paper trading mode)"""
-        self.client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=True)
-        self.data_client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+        """Initialize Alpaca REST client (paper trading mode)"""
+        self.api = REST(
+            key_id=ALPACA_API_KEY,
+            secret_key=ALPACA_SECRET_KEY,
+            base_url=ALPACA_BASE_URL,
+        )
 
     def get_account(self):
         """Fetch account info"""
-        account = self.client.get_account()
+        account = self.api.get_account()
         return {
             "cash": float(account.cash),
             "portfolio_value": float(account.portfolio_value),
@@ -29,7 +27,7 @@ class StockSimulator:
 
     def get_positions(self):
         """Get current open positions"""
-        positions = self.client.get_all_positions()
+        positions = self.api.get_positions()
         result = []
         for pos in positions:
             result.append({
@@ -44,50 +42,50 @@ class StockSimulator:
 
     def buy(self, symbol, qty):
         """Place a market buy order"""
-        order_request = MarketOrderRequest(
+        order = self.api.submit_order(
             symbol=symbol,
             qty=qty,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
+            side="buy",
+            type="market",
+            time_in_force="day",
         )
-        order = self.client.submit_order(order_request)
         return {
             "order_id": order.id,
             "symbol": order.symbol,
             "qty": float(order.qty),
-            "side": order.side.value,
+            "side": order.side,
             "status": order.status,
             "submitted_at": str(order.submitted_at),
         }
 
     def sell(self, symbol, qty):
         """Place a market sell order"""
-        order_request = MarketOrderRequest(
+        order = self.api.submit_order(
             symbol=symbol,
             qty=qty,
-            side=OrderSide.SELL,
-            time_in_force=TimeInForce.DAY,
+            side="sell",
+            type="market",
+            time_in_force="day",
         )
-        order = self.client.submit_order(order_request)
         return {
             "order_id": order.id,
             "symbol": order.symbol,
             "qty": float(order.qty),
-            "side": order.side.value,
+            "side": order.side,
             "status": order.status,
             "submitted_at": str(order.submitted_at),
         }
 
     def get_orders(self, status="all"):
         """Get order history"""
-        orders = self.client.get_orders(status=status)
+        orders = self.api.get_orders(status=status)
         result = []
         for order in orders:
             result.append({
                 "order_id": order.id,
                 "symbol": order.symbol,
                 "qty": float(order.qty),
-                "side": order.side.value,
+                "side": order.side,
                 "price": float(order.filled_avg_price) if order.filled_avg_price else None,
                 "status": order.status,
                 "submitted_at": str(order.submitted_at),
@@ -97,22 +95,18 @@ class StockSimulator:
 
     def get_bars(self, symbol, days=30):
         """Fetch historical bars"""
-        start_date = datetime.now() - timedelta(days=days)
-        request = StockBarsRequest(
-            symbol_or_symbols=[symbol],
-            start=start_date,
-            timeframe=TimeFrame.DAY,
-        )
-        bars = self.data_client.get_stock_bars(request)
+        bars = self.api.get_barset(symbol, "day", limit=days)
+        if not bars:
+            return []
         result = []
         for bar in bars[symbol]:
             result.append({
-                "timestamp": str(bar.timestamp),
-                "open": float(bar.open),
-                "high": float(bar.high),
-                "low": float(bar.low),
-                "close": float(bar.close),
-                "volume": int(bar.volume),
+                "timestamp": str(bar.t),
+                "open": float(bar.o),
+                "high": float(bar.h),
+                "low": float(bar.l),
+                "close": float(bar.c),
+                "volume": int(bar.v),
             })
         return result
 
@@ -125,6 +119,7 @@ if __name__ == "__main__":
     print(f"Cash: ${account['cash']:.2f}")
     print(f"Portfolio Value: ${account['portfolio_value']:.2f}")
     print(f"Buying Power: ${account['buying_power']:.2f}")
+    print(f"Status: {account['trading_status']}")
     
     print("\n=== Current Positions ===")
     positions = trader.get_positions()
@@ -136,5 +131,8 @@ if __name__ == "__main__":
     
     print("\n=== Recent Orders ===")
     orders = trader.get_orders(status="closed")
-    for order in orders[:5]:
-        print(f"{order['side']} {order['qty']} {order['symbol']} @ ${order['price']} - {order['status']}")
+    if orders:
+        for order in orders[:5]:
+            print(f"{order['side'].upper()} {order['qty']} {order['symbol']} @ ${order['price']} - {order['status']}")
+    else:
+        print("No closed orders")

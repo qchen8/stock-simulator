@@ -1,0 +1,103 @@
+{
+  "mode": "live",
+  "symbols": ["TSLA", "AAPL", "NVDA", "MSFT", "AMD"],
+  "market_hours": {
+    "open_time": "09:30",
+    "close_time": "16:00",
+    "last_entry_time": "15:00",
+    "close_all_at": "15:55",
+    "timezone": "US/Eastern"
+  },
+  "risk": {
+    "max_trades_per_day": 10,
+    "max_daily_loss": 500,
+    "risk_per_trade": 0.02,
+    "max_position_hold_minutes": 120,
+    "position_size_fixed": true,
+    "base_position_size": 10
+  },
+  "strategies": {
+    "opening_bell_momentum": {
+      "enabled": true,
+      "hours_active": "09:30-10:30",
+      "position_size": 10,
+      "min_gap_percent": 2.0,
+      "profit_target_percent": 2.5,
+      "stop_loss_percent": 1.0,
+      "candle_size": "1m"
+    },
+    "range_scalp": {
+      "enabled": true,
+      "hours_active": "10:30-15:00",
+      "position_size": 5,
+      "profit_target_percent": 0.75,
+      "stop_loss_percent": 0.75,
+      "candle_size": "5m",
+      "support_resistance_period": 60,
+      "min_trades": 5,
+      "max_trades": 10
+    },
+    "rsi_extremes": {
+      "enabled": true,
+      "hours_active": "09:30-15:00",
+      "position_size": 10,
+      "rsi_period": 14,
+      "oversold_threshold": 20,
+      "overbought_threshold": 80,
+      "profit_target_percent": 1.0,
+      "stop_loss_percent": 0.75,
+      "candle_size": "5m"
+    },
+    "ema_crossover": {
+      "enabled": true,
+      "hours_active": "10:30-15:00",
+      "position_size": 10,
+      "fast_ema": 12,
+      "slow_ema": 26,
+      "volume_multiplier": 1.5,
+      "profit_target_percent": 1.5,
+      "stop_loss_percent": 1.0,
+      "candle_size": "5m"
+    },
+    "bb_squeeze": {
+      "enabled": true,
+      "hours_active": "09:30-15:00",
+      "position_size": 5,
+      "bb_period": 20,
+      "bb_std_dev": 2,
+      "bb_width_threshold_percent": 0.5,
+      "profit_target_percent": 1.5,
+      "stop_loss_percent": 0.5,
+      "candle_size": "5m"
+    },
+    "rejection_candle": {
+      "enabled": true,
+      "hours_active": "09:30-15:00",
+      "position_size": 10,
+      "min_wick_percent": 1.5,
+      "profit_target_percent": 1.25,
+      "stop_loss_percent": 1.0,
+      "candle_size": "5m"
+    },
+    "news_spike_fade": {
+      "enabled": true,
+      "hours_active": "09:30-15:00",
+      "position_size": 10,
+      "min_move_percent": 3.0,
+      "profit_target_percent": 1.5,
+      "stop_loss_percent": 2.0,
+      "candle_size": "5m"
+    }
+  },
+  "dashboard": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 5000,
+    "update_interval_ms": 100
+  },
+  "logging": {
+    "level": "INFO",
+    "events_log": "logs/events.jsonl",
+    "trades_log": "logs/trades.csv"
+  }
+}
