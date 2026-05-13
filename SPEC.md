@@ -1,6 +1,6 @@
-# Stock-Simulator: Algorithmic Trading App Spec
+# Stock-Simulator: Day Trading Algorithmic Bot Spec
 
-**Version:** 0.1 (Draft)  
+**Version:** 0.2 (Day Trading Edition)  
 **Status:** Iterating  
 **Last Updated:** 2026-05-12
 
@@ -8,275 +8,409 @@
 
 ## 1. Overview
 
-An algorithmic trading application that combines **technical chart analysis** and **news sentiment** to generate buy/sell signals. Paper-traded on Alpaca to validate strategies before live deployment.
+An intraday algorithmic trading application focused on **day trading** using **technical analysis** and **real-time price monitoring**. Strategies hold positions 15 minutes to 2 hours max, all closed by end-of-day. Paper-traded on Alpaca with WebSocket streaming.
 
 **Goals:**
-- Automated signal generation from multiple data sources
-- Backtestable strategies
-- Real-time trade execution (paper trading first)
-- Performance tracking and metrics
-- Safe, iterative strategy refinement
+- Fast, reactive signal generation from intraday price action
+- Multiple concurrent strategies (opening momentum, range scalps, spike fades)
+- Real-time WebSocket monitoring for instant entry/exit
+- Risk-tight position management (1-2% max loss per trade)
+- Safe iterative refinement via backtesting
 
 ---
 
 ## 2. Core Components
 
 ### 2.1 Data Pipeline
-- **Market Data:** Historical and real-time bars (OHLCV) from Alpaca
-- **News Feed:** Headlines, sentiment scores (TextBlob or transformers)
-- **Technical Indicators:** RSI, MACD, Bollinger Bands, SMA/EMA, ATR, Stochastic
-- **Reference Data:** Assets, trading hours, market calendar
+- **Real-time Market Data:** WebSocket price streams (1m, 5m candles)
+- **Historical Data:** Alpaca REST bars for backtesting
+- **News Feed:** Real-time alerts for earnings, Fed decisions, economic releases
+- **Technical Indicators:** RSI, MACD, EMA, Bollinger Bands, Volume (all intraday)
 
-### 2.2 Signal Generation
-- **Technical Signals:** Indicator-based rules (e.g., RSI < 30 = oversold, MA crossover)
-- **Sentiment Signals:** News score aggregation (bullish vs bearish headlines)
-- **Combined Signal:** Weighted merge of tech + sentiment into buy/hold/sell recommendations
-- **Filtering:** Risk checks (position sizing, max loss, correlation)
+### 2.2 Strategy Engine
+- **7 Day Trading Strategies:** Each with own entry/exit rules and timeframes
+- **Time-Aware:** Market hours (9:30 AM-4:00 PM ET) with strategy rotation
+- **Daily Close-out:** All positions liquidated by 3:55 PM ET
+- **Real-time Signal Generation:** Triggers on WebSocket candle closes, not batch polling
 
-### 2.3 Strategy Engine
-- **Rule-based:** Condition → Action (if RSI < 30 AND sentiment > 0.6, buy)
-- **Backtestable:** Replay historical data, measure returns/drawdown
-- **Live Mode:** Real-time updates, execute orders via Alpaca
-- **Configurable:** Thresholds, weights, symbols, timeframes
+### 2.3 Execution & Risk Management
+- **Quick Fills:** Market orders only (tight bid-ask, liquid day-trading stocks)
+- **Micro Position Sizing:** 1-2% risk per trade, auto-scaled by ATR
+- **Hard Stops:** Immediate exit on -1 to -2% per trade
+- **Daily Cap:** Max 5-10 trades/day, $500 daily loss limit
 
-### 2.4 Execution & Risk Management
-- **Order Placement:** Market, limit, stop-loss orders
-- **Position Sizing:** Kelly fraction or fixed % of portfolio
-- **Portfolio Limits:** Max 5 positions, max loss per trade, daily stop-loss
-- **Logging:** All orders, signals, P&L tracked
-
-### 2.5 Monitoring & Reporting
-- **Dashboard:** Real-time positions, P&L, signal activity
-- **Metrics:** Win rate, Sharpe ratio, max drawdown, monthly returns
-- **Alerts:** Major position changes, risk threshold breaches
+### 2.4 Monitoring & Alerts
+- **Real-time Dashboard:** Active positions, P&L, signal activity
+- **Alerts:** Entry/exit signals, stop-loss hits, daily loss threshold
+- **Trade Journal:** Every trade logged with reason, entry, exit, P&L
 
 ---
 
-## 3. Data Sources
+## 3. Data Sources & Infrastructure
 
-### Market Data
-- **Alpaca Trading API:** Bars (1m, 5m, 15m, 1h, 1d), snapshots, quotes
-- **Storage:** In-memory cache + SQLite for historical backtest data
+### Real-time Market Data
+- **Alpaca WebSocket API:** Live quote streams, trade streams
+- **Candle Assembly:** Local aggregation of trades into 1m, 5m candles
+- **Storage:** SQLite for historical backtest data only (live uses streaming)
 
-### News Sentiment
-- **Primary:** NewsAPI (headlines, filtering by ticker)
-- **Fallback:** Alpha Vantage (news from earnings/events)
-- **Sentiment:** TextBlob (simple) or HuggingFace transformers (more accurate)
+### News & Catalysts
+- **Real-time Alerts:** NewsAPI, earnings calendar, Fed schedule
+- **Trigger Filter:** Only process pre-market gaps and major news events
 
-### Technical Indicators
-- **Library:** pandas-ta (or ta-lib if available)
-- **Computed on:** Real-time bars, recomputed as new candles close
+### Technical Indicators (Real-time)
+- **Library:** pandas-ta for fast computation
+- **Update Frequency:** Recompute on every candle close
+- **Lookback:** 50-200 bars in memory (configurable per strategy)
 
 ---
 
-## 4. Trading Signals & Logic
+## 4. Day Trading Strategies
 
-### 4.1 Technical Signals (Examples)
+**Max 5-10 trades/day across all strategies. Rotate through daypart:**
 
-| Signal | Rules | Confidence |
-|--------|-------|------------|
-| **RSI Oversold** | RSI(14) < 30 | Low (noisy alone) |
-| **MA Golden Cross** | SMA(50) > SMA(200) | Medium |
-| **MACD Bullish** | MACD > Signal line, histogram > 0 | Medium |
-| **Bollinger Pop** | Price closes above upper BB | Low |
-| **Trend Confirmation** | Close > SMA(20) for 3 candles | Medium |
+### 4.1 Opening Bell Momentum (9:30-10:30 AM ET)
 
-### 4.2 Sentiment Signals (Examples)
+| Component | Spec |
+|-----------|------|
+| **Triggers** | Pre-market gap +2% on positive news |
+| **Entry** | Buy at open market price, 10 shares (scalable) |
+| **Exit** | Profit target +2-3% OR 10:30 AM hard exit |
+| **Stop** | -1% hard stop |
+| **Hold** | 15-45 minutes |
+| **Win Rate** | 60% |
+| **Risk/Reward** | 1:2-3 |
+| **Ideal Stocks** | TSLA, AAPL, NVDA, MSFT (high volume gappers) |
 
-| Signal | Rules | Confidence |
-|--------|-------|------------|
-| **Positive News** | Sentiment score > 0.6, volume > 5 | Medium |
-| **Negative Catalyst** | Sentiment < -0.5, recent (< 24h) | Medium |
-| **Consensus Shift** | 70% positive headlines last 7d | High |
+### 4.2 Bollinger Band Squeeze (Anytime, 5m candles)
 
-### 4.3 Combined Logic
+| Component | Spec |
+|-----------|------|
+| **Setup** | BB width < 0.5% of price for 3+ candles |
+| **Trigger** | MACD cross + price breaks band |
+| **Entry** | Buy/sell at breakout, 5 shares |
+| **Exit** | Profit +1-2% OR 2-hour hold max |
+| **Stop** | -0.5% |
+| **Hold** | 30-90 minutes |
+| **Win Rate** | 56-60% |
+| **Risk/Reward** | 1:2 |
+
+### 4.3 RSI Extremes (5-15m candles)
+
+| Component | Spec |
+|-----------|------|
+| **Oversold** | RSI(14) < 20 + price bounces off support |
+| **Overbought** | RSI(14) > 80 + price at resistance |
+| **Entry** | 10 shares |
+| **Exit** | Profit +0.5-1.5% OR 60 min hold max |
+| **Stop** | -0.75% |
+| **Hold** | 20-60 minutes |
+| **Win Rate** | 60-65% (highest quality) |
+| **Risk/Reward** | 1:1.5-2 |
+
+### 4.4 Range Scalp (10:30 AM-3:00 PM, 1-5m candles)
+
+| Component | Spec |
+|-----------|------|
+| **Setup** | Identify 1-hour support/resistance levels |
+| **Entry** | Buy support, sell resistance, 5 shares |
+| **Exit** | Profit +0.5-1% per scalp |
+| **Stop** | -0.75% per trade |
+| **Hold** | 10-30 minutes |
+| **Frequency** | 5-10 quick scalps (most trades) |
+| **Win Rate** | 58-62% |
+| **Risk/Reward** | 1:1-1.5 |
+
+### 4.5 EMA Crossover (5-15m candles)
+
+| Component | Spec |
+|-----------|------|
+| **Setup** | EMA(12) crosses EMA(26) on 5m chart |
+| **Volume** | Confirm with volume > 1.5x average |
+| **Entry** | 10 shares |
+| **Exit** | Profit +1-2% OR EMA cross back |
+| **Stop** | -1% |
+| **Hold** | 30-90 minutes |
+| **Win Rate** | 54-58% |
+| **Risk/Reward** | 1:1.5-2 |
+
+### 4.6 Rejection Candle Scalp (5-15m)
+
+| Component | Spec |
+|-----------|------|
+| **Trigger** | Long wick rejection at support/resistance |
+| **Setup** | Candle closes well above/below wick |
+| **Entry** | 10 shares at signal |
+| **Exit** | Profit +1-1.5% |
+| **Stop** | Break of wick low/high |
+| **Hold** | 20-45 minutes |
+| **Win Rate** | 62-65% (high quality, fewer signals) |
+| **Risk/Reward** | 1:1.5 |
+
+### 4.7 News Spike Fade (5m, on catalyst)
+
+| Component | Spec |
+|-----------|------|
+| **Catalysts** | Earnings, Fed decision, economic data, upgrades |
+| **Trigger** | Stock moves 3%+ on headline |
+| **Entry** | Fade into dip (long spike down) or short spike (down on bad news) |
+| **Exit** | Profit +1-2% from lows |
+| **Stop** | -2% (news is volatile) |
+| **Hold** | 30-120 minutes |
+| **Win Rate** | 55-60% |
+| **Risk/Reward** | 1:1.5-2 |
+
+---
+
+## 5. Daily Strategy Rotation
 
 ```
-BUY if:
-  (Technical Score > 0.6) AND (Sentiment > 0.3) AND (Not in position)
-  
-SELL if:
-  (Position underwater > 5%) OR (Technical Score < 0.3) OR (Sentiment < -0.5)
-  
-HOLD otherwise
+9:30 AM ET:    Opening Bell Momentum
+  ↓ (9:30-10:30 AM, then stop)
+
+10:30 AM ET:   Range Scalp (primary income strategy, most trades)
+  ↓
+               EMA Crossover, RSI Extremes, BB Squeeze (supplement as signals appear)
+  ↓
+
+2:00 PM ET:    Last 2 hours (exit positions early, don't start new trades)
+  ↓
+
+3:55 PM ET:    Liquidate ALL remaining positions (hard rule)
 ```
 
-**Scoring:** Simple weighted average
-- Technical: 60%
-- Sentiment: 40%
-- Final Score: 0–1 (0=sell, 0.5=neutral, 1=buy)
+**Daily Limits:**
+- Max 5-10 trades across all strategies
+- Max loss: -$500/day (shutdown after)
+- Max hold per trade: 2 hours
+- Exit all by 3:55 PM (hard stop, no exceptions)
 
 ---
 
-## 5. Architecture
+## 6. Architecture
 
 ```
 stock-simulator/
-├── data/
-│   ├── fetcher.py          # Alpaca bars, NewsAPI headlines
-│   ├── indicators.py        # Technical analysis calculations
-│   ├── sentiment.py         # News sentiment scoring
-│   └── storage.py          # SQLite for historical data
-├── signals/
-│   ├── technical.py        # RSI, MACD, BB rules
-│   ├── sentiment.py        # News score aggregation
-│   └── combined.py         # Merge tech + sentiment into action
-├── strategies/
-│   ├── base.py             # Strategy template/interface
-│   ├── rsi_ma_combo.py     # Example: RSI + MA + sentiment
-│   └── config.json         # Strategy parameters (thresholds, weights)
-├── execution/
-│   ├── trader.py           # Place/cancel orders via Alpaca
-│   └── risk.py             # Position sizing, max loss checks
-├── backtest/
-│   ├── engine.py           # Replay historical bars
-│   └── metrics.py          # Sharpe, drawdown, win rate
 ├── live/
-│   ├── scheduler.py        # APScheduler for periodic checks
-│   └── monitor.py          # Dashboard/alerts
+│   ├── websocket.py       # Alpaca WebSocket connection, candle aggregation
+│   ├── strategies.py      # All 7 strategies with entry/exit logic
+│   ├── signal_engine.py   # Evaluate signals, queue orders
+│   ├── execution.py       # Execute orders, track fills
+│   └── monitor.py         # Real-time dashboard, alerts
+├── backtest/
+│   ├── engine.py          # Replay 1m/5m candles, simulate fills
+│   ├── optimizer.py       # Parameter search (entry thresholds, etc)
+│   └── metrics.py         # Win rate, Sharpe, max loss, equity curve
+├── data/
+│   ├── fetcher.py         # Alpaca REST for historical bars
+│   ├── indicators.py      # Fast RSI, MACD, EMA, BB computation
+│   └── cache.py           # In-memory bar storage (current day)
+├── config/
+│   ├── strategies.json    # Entry/exit thresholds per strategy
+│   ├── symbols.json       # Watchlist (TSLA, AAPL, NVDA, etc)
+│   └── risk.json          # Position size, daily loss cap, hours
 ├── tests/
-│   ├── test_signals.py
-│   ├── test_backtester.py
-│   └── test_trader.py
-├── main.py                 # Entry point (backtest or live)
-├── SPEC.md                 # This file
-├── README.md
+│   ├── test_strategies.py
+│   ├── test_backtest.py
+│   └── test_execution.py
+├── main.py                # Entry: backtest or live mode
+├── SPEC.md                # This file
 └── requirements.txt
 ```
 
 ---
 
-## 6. Tech Stack
+## 7. Tech Stack
 
 | Component | Library | Notes |
 |-----------|---------|-------|
-| **Trading API** | alpaca-trade-api | Paper + live |
-| **Data Fetching** | requests | NewsAPI, Alpaca REST |
-| **Analysis** | pandas, numpy | Data manipulation |
-| **Indicators** | pandas-ta | Technical analysis |
-| **Sentiment** | TextBlob or transformers | News scoring |
-| **Database** | SQLite | Historical bars for backtest |
-| **Scheduling** | APScheduler | Periodic signal checks |
-| **Backtesting** | Custom engine | Walk-forward simulation |
-| **Config** | JSON/YAML | Strategy parameters |
-| **Testing** | pytest | Unit + integration tests |
+| **Broker** | alpaca-trade-api + websockets | Paper + live |
+| **WebSocket** | websockets (Python 3.9+) | Real-time candles |
+| **Analysis** | pandas, numpy, pandas-ta | Fast computation |
+| **Indicators** | pandas-ta | RSI, MACD, EMA, BB, Volume |
+| **Database** | SQLite | Backtest historical bars only |
+| **Scheduling** | APScheduler | Market hours, daily close-out |
+| **Backtest** | Custom engine | Walk-forward simulation on 1m/5m bars |
+| **Logging** | Python logging + CSV trade journal | Full audit trail |
+| **Config** | JSON | Strategy params, symbols, risk |
 
 ---
 
-## 7. Configuration Example
+## 8. Configuration Example
 
 ```json
 {
-  "strategy": "rsi_ma_combo",
-  "symbols": ["AAPL", "TSLA", "NVDA"],
-  "timeframe": "1h",
-  "position_size": 0.1,
-  "max_positions": 5,
-  "max_loss_per_trade": 100,
-  "max_daily_loss": 500,
-  "technical": {
-    "rsi_period": 14,
-    "rsi_oversold": 30,
-    "rsi_overbought": 70,
-    "ma_fast": 20,
-    "ma_slow": 50,
-    "ma_confirmation_bars": 3
+  "mode": "live",
+  "symbols": ["TSLA", "AAPL", "NVDA", "MSFT", "AMD"],
+  "market_hours": {
+    "open": "09:30",
+    "close": "16:00",
+    "last_entry": "15:00"
   },
-  "sentiment": {
-    "enabled": true,
-    "min_confidence": 0.6,
-    "weight": 0.4,
-    "news_lookback_days": 7
+  "risk": {
+    "max_trades_per_day": 10,
+    "max_daily_loss": 500,
+    "risk_per_trade": 0.02,
+    "max_position_hold_minutes": 120,
+    "close_all_at": "15:55"
   },
-  "combined": {
-    "buy_threshold": 0.6,
-    "sell_threshold": 0.3
+  "strategies": {
+    "opening_bell_momentum": {
+      "enabled": true,
+      "hours": "09:30-10:30",
+      "position_size": 10,
+      "profit_target": 2.5,
+      "stop_loss": 1.0
+    },
+    "range_scalp": {
+      "enabled": true,
+      "hours": "10:30-15:00",
+      "position_size": 5,
+      "profit_target": 0.75,
+      "stop_loss": 0.75,
+      "candle_size": "5m"
+    },
+    "rsi_extremes": {
+      "enabled": true,
+      "rsi_period": 14,
+      "oversold": 20,
+      "overbought": 80,
+      "position_size": 10,
+      "profit_target": 1.0,
+      "stop_loss": 0.75
+    },
+    "ema_crossover": {
+      "enabled": true,
+      "fast_ema": 12,
+      "slow_ema": 26,
+      "position_size": 10,
+      "profit_target": 1.5,
+      "stop_loss": 1.0,
+      "volume_multiplier": 1.5
+    },
+    "bb_squeeze": {
+      "enabled": true,
+      "bb_width_threshold": 0.5,
+      "position_size": 5,
+      "profit_target": 1.5,
+      "stop_loss": 0.5
+    },
+    "rejection_candle": {
+      "enabled": true,
+      "position_size": 10,
+      "profit_target": 1.25,
+      "stop_loss": 1.0
+    },
+    "news_spike_fade": {
+      "enabled": true,
+      "min_move_percent": 3.0,
+      "position_size": 10,
+      "profit_target": 1.5,
+      "stop_loss": 2.0
+    }
   }
 }
 ```
 
 ---
 
-## 8. Workflow
+## 9. Workflow
 
 ### Backtest Mode
-1. Load historical bars for symbol(s) and date range
-2. For each candle:
-   - Compute technical indicators
-   - Fetch news sentiment for the day
-   - Calculate combined signal
-   - Simulate order execution at candle close price
-   - Track P&L, metrics
-3. Generate report (Sharpe, drawdown, win rate, equity curve)
+1. Download 1m + 5m bars for symbol(s) (3-6 months historical)
+2. Simulate opening bell momentum, range scalps, all strategies
+3. For each bar:
+   - Compute indicators (RSI, MACD, EMA, BB)
+   - Evaluate all strategy signals
+   - Queue orders if triggered
+   - Execute at bar close price (assume instant fill)
+   - Track P&L, win/loss, hold time
+4. Generate report: win rate, Sharpe, max loss, equity curve
 
 ### Live Mode
-1. On startup, fetch current positions, account state
-2. Every N minutes (configurable):
-   - Fetch latest bars and news
-   - Compute signals
-   - Execute trades if signal triggers
+1. On startup (8:00 AM): Fetch current positions, account state
+2. Connect to Alpaca WebSocket, subscribe to price streams
+3. On every 1m candle close:
+   - Compute indicators
+   - Evaluate all strategy signals
+   - Place orders if triggered
+   - Monitor for stop-loss hits
    - Log all activity
-3. Monitor and alert on breaches
+4. At 2:00 PM: Stop entering new trades
+5. At 3:55 PM: Liquidate all remaining positions (hard exit)
+6. Post-market: Generate daily summary, P&L, trade journal
 
 ---
 
-## 9. Development Phases
+## 10. Development Phases
 
 ### Phase 1: Foundation (Week 1)
-- [ ] Data fetcher (Alpaca bars, NewsAPI)
-- [ ] Technical indicator calculations
-- [ ] Sentiment scoring (TextBlob baseline)
-- [ ] Combined signal engine
-- [ ] Paper trade execution (single symbol)
+- [ ] WebSocket connection + real-time 1m/5m candle aggregation
+- [ ] Indicator calculations (RSI, MACD, EMA, BB, Volume)
+- [ ] Backtest engine (1m/5m replay, order simulation)
+- [ ] Single strategy implementation (Range Scalp, simplest)
+- [ ] Paper trade on 1 symbol (TSLA)
 
-### Phase 2: Strategy & Backtest (Week 2)
-- [ ] Configurable strategy framework
-- [ ] Backtester engine
-- [ ] Performance metrics (Sharpe, drawdown, etc.)
-- [ ] Validate on 6-month historical data
+### Phase 2: Strategies (Week 2)
+- [ ] Implement all 7 strategies
+- [ ] Configurable entry/exit thresholds (JSON)
+- [ ] Strategy rotation + time-aware scheduling
+- [ ] Daily close-out logic (3:55 PM liquidation)
+- [ ] Backtest all strategies on 3-month data
 
-### Phase 3: Safety & Monitoring (Week 3)
-- [ ] Risk management (position limits, max loss)
-- [ ] Real-time scheduler
-- [ ] Alert system (email, Slack, Discord)
-- [ ] Live monitoring dashboard
+### Phase 3: Risk & Execution (Week 3)
+- [ ] Position sizing (ATR-scaled, % risk)
+- [ ] Hard stop-loss enforcement
+- [ ] Daily loss cap ($500)
+- [ ] Trade journal (CSV: time, symbol, entry, exit, P&L, reason)
+- [ ] Alerts (Slack/Discord/Email on major events)
 
-### Phase 4: Refinement (Week 4+)
-- [ ] Multi-symbol support
-- [ ] Parameter optimization
-- [ ] Advanced strategies (pairs trading, ML features)
-- [ ] Logging/audit trail
-
----
-
-## 10. Known Unknowns & Questions
-
-1. **Sentiment Accuracy:** How often should we update news? Daily? Intraday? Will simple TextBlob suffice or do we need transformers?
-2. **Signal Weighting:** Is 60/40 tech/sentiment right, or should it be dynamic per symbol?
-3. **Timeframe:** Start with 1h candles? Or 1d for lower churn?
-4. **Position Sizing:** Kelly fraction, fixed %, or dynamic based on volatility?
-5. **News Source:** NewsAPI only, or supplement with Twitter, earnings calendars, SEC filings?
-6. **Drawdown Limits:** Daily stop-loss at -$500? Per-trade at -$100? Adjustable by symbol?
-7. **Backtester Slippage:** Assume instant fill at candle close, or add slippage buffer?
+### Phase 4: Live Trading & Refinement (Week 4+)
+- [ ] Deploy to paper account (real-time)
+- [ ] Parameter optimization (backtest → live validation)
+- [ ] Multi-symbol support (5-10 watch list)
+- [ ] Performance dashboard (equity curve, daily P&L)
+- [ ] Live → Production migration path
 
 ---
 
-## 11. Success Metrics
+## 11. Known Unknowns & Decisions
 
-- **Backtest:** Sharpe ratio > 1.0, max drawdown < 20%, win rate > 55%
-- **Paper Trading:** Consistent profitability over 4+ weeks
-- **Code Quality:** 80%+ test coverage, clear logging
-- **UX:** Easy to modify strategy params without code changes
+1. **WebSocket vs Polling:** Use Alpaca WebSocket (yes) or REST polling every 1m (slower)?
+   - *Decision:* WebSocket for real-time signals, polling is too slow for day trading.
+
+2. **Position Sizing:** Fixed shares (10, 5) or percent-of-capital? ATR-scaled?
+   - *Decision:* Start with fixed shares, scale by ATR volatility later.
+
+3. **Entry Timing:** Enter on candle close or mid-candle on signal?
+   - *Decision:* Candle close only (prevents whipsaws, cleaner backtest).
+
+4. **Fill Assumption:** Instant at close price or add slippage?
+   - *Decision:* Assume instant (liquid day-trade stocks), add 1-cent buffer for live.
+
+5. **Strategy Conflicts:** What if 2 strategies signal same symbol same time?
+   - *Decision:* Combine into single larger position, exit on first signal triggered.
+
+6. **News Alerts Integration:** Real-time earnings/Fed/econ calendar?
+   - *Decision:* NewsAPI for now, add calendar alerts in Phase 4.
 
 ---
 
-## Next Steps
+## 12. Success Metrics
 
-1. **Review & iterate** on this spec — adjust signal logic, tech stack, phases
-2. **Lock architecture** once aligned
-3. **Start Phase 1** — basic data pipeline and single-symbol backtest
-4. **Weekly checkpoints** to measure progress and pivot if needed
+- **Backtest (3-month):** >55% win rate, Sharpe >1.0, max loss <20%, avg trade +0.5-1.5%
+- **Paper Trading (4+ weeks):** Consistent daily P&L, >60% of backtest results, no catastrophic losses
+- **Code:** 80%+ test coverage, <10 second signal latency, zero crashes
+- **Operational:** Max 10 trades/day, zero positions after 3:55 PM, 100% logged
 
 ---
 
-_Feedback? Edge cases? Let's refine before building._
+## 13. Next Steps
+
+1. **Review & iterate spec** — finalize strategies, config, risk model
+2. **Lock architecture** (WebSocket real-time vs REST polling decision)
+3. **Start Phase 1** — WebSocket + 1m candles + basic backtest engine
+4. **Weekly demos** — show backtest results, iterate on thresholds
+
+---
+
+_Ready to build? Let's validate the spec with some backtest data first._
