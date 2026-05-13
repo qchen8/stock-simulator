@@ -31,7 +31,7 @@ class DashboardServer:
 
     def _subscribe_to_events(self):
         """Subscribe to all major events."""
-        from events import EventType
+        from live.events import EventType
 
         for event_type in EventType:
             self.event_bus.subscribe(event_type, self._on_event)
